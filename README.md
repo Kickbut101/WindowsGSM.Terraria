@@ -14,6 +14,8 @@ XNA Framework 4.0 installed (you can get [Here](https://web.archive.org/web/2020
 
 ## Additional Command Line options
 
+Full list [Here](https://terraria.gamepedia.com/Server)
+
 <ul><li><code>-config &lt;file path&gt;</code> - Specifies a configuration file to use.</li>
 <li><code>-port &lt;number&gt;</code> - Specifies the port to listen on.</li>
 <li><code>-players &lt;number&gt; / -maxplayers &lt;number&gt;</code> - Sets the max number of players.</li>
