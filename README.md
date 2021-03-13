@@ -1,6 +1,8 @@
 # WindowsGSM.Terraria
 🧩 WindowsGSM plugin for supporting Terraria
 
+WARNING - Plugin cannot currently handle commands to server, you'll want to NOT use console embed option.
+
 ## Requirements
 [WindowsGSM](https://github.com/WindowsGSM/WindowsGSM) >= 1.21.0
 
