@@ -1,12 +1,13 @@
-﻿using System.Threading.Tasks;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using WindowsGSM.Functions;
 using WindowsGSM.GameServer.Query;
-using System;
-using System.Linq;
+using Newtonsoft.Json.Linq;
 using System.IO.Compression;
 
 namespace WindowsGSM.Plugins
@@ -38,7 +39,7 @@ namespace WindowsGSM.Plugins
         public string FullName = "Terraria Dedicated Server"; // Game server FullName
         public bool AllowsEmbedConsole = true;  // Does this server support output redirect?
         public int PortIncrements = 1; // This tells WindowsGSM how many ports should skip after installation
-        public object QueryMethod = null; // Query method should be use on current server type. Accepted value: null or new A2S() or new FIVEM() or new UT3()
+        public object QueryMethod = new A2S(); // Query method should be use on current server type. Accepted value: null or new A2S() or new FIVEM() or new UT3()
 
 
         // - Game server default values
@@ -46,52 +47,45 @@ namespace WindowsGSM.Plugins
         public string QueryPort = "7777"; // Default query port
         public string Defaultmap = "DefaultWorld"; // Default World Name
         public string Maxplayers = "8"; // Default maxplayers
-        public string Additional = ""; // Additional server start parameter
+        public string Additional = "-autocreate 3"; // Additional server start parameter
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
         public async void CreateServerCFG()
-        {
-          /*  //Download server.cfg
-            string configPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, @"cfx-server-data-master\server.cfg");
-            if (await Functions.Github.DownloadGameServerConfig(configPath, FullName))
-            {
-                string configText = File.ReadAllText(configPath);
-                configText = configText.Replace("{{hostname}}", _serverData.ServerName);
-                configText = configText.Replace("{{rcon_password}}", _serverData.GetRCONPassword());
-                configText = configText.Replace("{{ip}}", _serverData.GetIPAddress());
-                configText = configText.Replace("{{port}}", _serverData.ServerPort);
-                configText = configText.Replace("{{maxplayers}}", Maxplayers);
-                File.WriteAllText(configPath, configText);
-            } */
-        }
-
-
-
+        {}
 
         public async Task<Process> Start()
         {
             string shipWorkingPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID); // c:\windowsgsm\servers\1\serverfiles\
             string terrariaEXEPath = Path.Combine(ServerPath.GetServersServerFiles(_serverData.ServerID, StartPath)); // c:\windowsgsm\servers\1\serverfiles\terrariaserver.exe
+            string terrariaServerMapPath = Path.Combine(shipWorkingPath, "Worlds", $"{_serverData.ServerMap}.wld"); // c:\windowsgsm\servers\1\serverfiles\Worlds\DefaultWorld.wld
+
+            //terrariaServerMapPath = terrariaServerMapPath.Replace(@"\","/"); // Flip the backslashes for forwards slashes. Unsure if this was necessary.
 
             // Does .exe path exist?
             if (!File.Exists(terrariaEXEPath))
             {
-                Error = $"{Path.GetFileName(terrariaEXEPath)} not found in ({serverData.ServerID})";
+                Error = $"{Path.GetFileName(terrariaEXEPath)} not found in ({_serverData.ServerID})";
                 return null;
             }
 
             // Prepare start parameters
             var param = new StringBuilder();
-            param.Append($" -persistent_storage_root \"{shipWorkingBinPath}\"");
-            param.Append($" -conf_dir serverdatafolder");
-            param.Append(string.IsNullOrWhiteSpace(_serverData.ServerMap) ? string.Empty : $" -cluster \"{_serverData.ServerMap}\""); 
-            param.Append(string.IsNullOrWhiteSpace(_serverData.ServerMap) ? string.Empty : $" -shard \"{_serverData.ServerMap}_Shard\"");
+            param.Append($" -config serverconfig.txt");
+            param.Append($" -savedirectory \"{shipWorkingPath}\""); // This is the golden got-damn command needed to point all world related stuff to a directory. Thanks terraria "wiki" for not listing this. Buttholes.
             param.Append(string.IsNullOrWhiteSpace(_serverData.ServerPort) ? string.Empty : $" -port {_serverData.ServerPort}");
-            param.Append(string.IsNullOrWhiteSpace(_serverData.ServerPort) ? string.Empty : $" -steam_master_server_port {_serverData.ServerQueryPort}");
             param.Append(string.IsNullOrWhiteSpace(_serverData.ServerMaxPlayer) ? string.Empty : $" -players {_serverData.ServerMaxPlayer}");
+            param.Append(string.IsNullOrWhiteSpace(_serverData.ServerIP) ? string.Empty : $" -ip \"{_serverData.ServerIP}\""); 
+            param.Append(string.IsNullOrWhiteSpace(_serverData.ServerMap) ? string.Empty : $" -world \"{terrariaServerMapPath}\""); 
+            param.Append(string.IsNullOrWhiteSpace(_serverData.ServerMap) ? string.Empty : $" -worldname \"{_serverData.ServerMap}\""); 
+            param.Append($" -secure");
             param.Append(string.IsNullOrWhiteSpace(_serverData.ServerParam) ? string.Empty : $" {_serverData.ServerParam}");
+
+            // Output the startupcommands used. Helpful for troubleshooting server commands and testing them out - leaving this in because it's helpful af.
+            var startupCommandsOutputTxtFile = ServerPath.GetServersServerFiles(_serverData.ServerID, "startupCommandsUsed.log");
+            File.WriteAllText(startupCommandsOutputTxtFile, $"{param}");
+
 
             // Prepare Process
             var p = new Process
@@ -143,22 +137,22 @@ namespace WindowsGSM.Plugins
             }
             catch (Exception e)
             {
-                base.Error = e.Message;
+                Error = e.Message;
                 return null; // return null if fail to start
             }
         }
-
+        // Stop process with commands for stopping servers (this actually right now doesn't work, server will not stop gracefully. Embedded console option doesn't seem to affect this behavior)
         public async Task Stop(Process p)
         {
             await Task.Run(() =>
             {
                 if (p.StartInfo.RedirectStandardInput)
                 {
-                    p.StandardInput.WriteLine("quit");
+                    p.StandardInput.WriteLine("exit");
                 }
                 else
                 {
-                    Functions.ServerConsole.SendMessageToMainWindow(p.MainWindowHandle, "quit");
+                    Functions.ServerConsole.SendMessageToMainWindow(p.MainWindowHandle, "exit");
                 }
             });
         }
@@ -167,156 +161,202 @@ namespace WindowsGSM.Plugins
         {
             try
             {
-                using (WebClient webClient = new WebClient())
-                {
-                    string html = await webClient.DownloadStringTaskAsync("https://runtime.fivem.net/artifacts/fivem/build_server_windows/master/");
-                    Regex regex = new Regex(@"[0-9]{4}-[ -~][^\s]{39}");
-                    var matches = regex.Matches(html);
+                    // Set webclient object
+                    WebClient webClient = new WebClient();
 
-                    if (matches.Count <= 0)
-                    {
-                        return null;
-                    }
+                    // Base url for terraria info/webpage
+                    string html = await webClient.DownloadStringTaskAsync("https://terraria.org/");
 
-                    //Match 1 is the latest recommended
-                    string recommended = regex.Match(html).ToString();
+                    // Regex pattern for pulling the download file location/address
+                    Regex regexFullString = new Regex(@"href='(.+?)'>PC Dedicated"); // href='/system/dedicated_servers/archives/000/000/042/original/terraria-server-1412.zip?1605039370'>PC Dedicated Server</a>
+                    Match matches1 = regexFullString.Match(html);
 
-                    //Download server.zip and extract then delete server.zip
-                    string serverPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "server");
-                    Directory.CreateDirectory(serverPath);
-                    string zipPath = Path.Combine(serverPath, "server.zip");
-                    await webClient.DownloadFileTaskAsync($"https://runtime.fivem.net/artifacts/fivem/build_server_windows/master/{recommended}/server.zip", zipPath);
+                    // Save group 1 as endURLString
+                    string endURLString = matches1.Groups[1].Value; // /system/dedicated_servers/archives/000/000/042/original/terraria-server-1412.zip?1605039370
+
+                    // Pull Build(?) number from string that was regexed
+                    Regex regexBuildNumber = new Regex(@"server-(\d+).zip"); // server-1412.zip || Capture 1412
+                    Match matches2 = regexBuildNumber.Match(endURLString);
+
+                    // Save build number
+                    string buildNumber = matches2.Groups[1].Value; // 1412
+
+                    //Set string of directory for extracted files
+                    string extractedDirPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "extractDir"); // c:\windowsgsm\servers\1\serverfiles\extractdir
+
+                    // Delete all files inside the extractdir (This command kills anything inside and remakes the dir)
+                    Directory.CreateDirectory(extractedDirPath);
+
+                    // Combined path for zip file destination based on build name
+                    string zipPath = Path.Combine(extractedDirPath, $"terraria-server-{buildNumber}.zip"); // c:\windowsgsm\servers\1\serverfiles\extractdir\terraria-server-1412.zip
+
+                    // Build URL String
+                    string URLFull = $"https://terraria.org{endURLString}";
+
+                    // Download .zip file to extracted dir
+                    await webClient.DownloadFileTaskAsync($"{URLFull}", zipPath);
+
+                    // Extract files to c:\windowsgsm\servers\1\serverfiles\extractDIR\1412\
                     await Task.Run(async () =>
                     {
                         try
                         {
-                            await FileManagement.ExtractZip(zipPath, serverPath);
+                            await FileManagement.ExtractZip(zipPath, extractedDirPath);
                         }
                         catch
                         {
                             Error = "Path too long";
                         }
                     });
+
+                    // Delete zip file downloaded from website
                     await Task.Run(() => File.Delete(zipPath));
 
-                    //Create FiveM-version.txt and write the downloaded version with hash
-                    File.WriteAllText(Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "RedM-version.txt"), recommended);
+                    // Setup path with known buildnumber variable
+                    string extractedFilesPath = Path.Combine(extractedDirPath,$"{buildNumber}","Windows"); // C:\windowsgsm\servers\1\serverfiles\extractDir\1412\Windows
 
-                    //Download cfx-server-data-master and extract to folder cfx-server-data-master then delete cfx-server-data-master.zip
-                    zipPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "cfx-server-data-master.zip");
-                    await webClient.DownloadFileTaskAsync("https://github.com/citizenfx/cfx-server-data/archive/master.zip", zipPath);
-                    await Task.Run(() => FileManagement.ExtractZip(zipPath, Functions.ServerPath.GetServersServerFiles(_serverData.ServerID)));
-                    await Task.Run(() => File.Delete(zipPath));
-                }
+                    // Copy files (this is for a new install) from the extracted directory to the main file directory within windowsGSM (c:\windowsgsm\servers\1\serverfiles)
+                    foreach (var file in Directory.GetFiles(extractedFilesPath))
+                        File.Copy(file, Path.Combine(Functions.ServerPath.GetServersServerFiles(_serverData.ServerID), Path.GetFileName(file)), true);
+
+
+                    // Delete the directory for extractedfiles
+                    Directory.Delete(extractedDirPath,true);
 
                 return null;
             }
-            catch
+            catch (Exception e)
             {
+                Error = e.Message;
                 return null;
             }
         }
 
+
+        // Fully update necessary server files to newest version (this typically happens after the GetRemoteBuild and GetLocalBuild tasks)
         public async Task<Process> Update()
         {
-            try
+             try
             {
-                using (WebClient webClient = new WebClient())
-                {
-                    string remoteBuild = await GetRemoteBuild();
+                    // Set webclient object
+                    WebClient webClient = new WebClient();
 
-                    //Download server.zip and extract then delete server.zip
-                    string serverPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "server");
-                    await Task.Run(() =>
-                    {
-                        try
-                        {
-                            Directory.Delete(serverPath, true);
-                        }
-                        catch
-                        {
-                            //ignore
-                        }
-                    });
+                    // Base url for terraria info/webpage
+                    string html = await webClient.DownloadStringTaskAsync("https://terraria.org/");
 
-                    if (Directory.Exists(serverPath))
-                    {
-                        Error = $"Unable to delete server folder. Path: {serverPath}";
-                        return null;
-                    }
+                    // Regex pattern for pulling the download file location/address
+                    Regex regexFullString = new Regex(@"href='(.+?)'>PC Dedicated"); // href='/system/dedicated_servers/archives/000/000/042/original/terraria-server-1412.zip?1605039370'>PC Dedicated Server</a>
+                    Match matches1 = regexFullString.Match(html);
 
-                    Directory.CreateDirectory(serverPath);
-                    string zipPath = Path.Combine(serverPath, "server.zip");
-                    await webClient.DownloadFileTaskAsync($"https://runtime.fivem.net/artifacts/fivem/build_server_windows/master/{remoteBuild}/server.zip", zipPath);
+                    // Save group 1 as endURLString
+                    string endURLString = matches1.Groups[1].Value; // /system/dedicated_servers/archives/000/000/042/original/terraria-server-1412.zip?1605039370
+
+                    // Pull Build(?) number from string that was regexed
+                    Regex regexBuildNumber = new Regex(@"server-(\d+).zip"); // server-1412.zip || Capture 1412
+                    Match matches2 = regexBuildNumber.Match(endURLString);
+
+                    // Save build number
+                    string buildNumber = matches2.Groups[1].Value; // 1412
+
+                    //Set string of directory for extracted files
+                    string extractedDirPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "extractDir"); // c:\windowsgsm\servers\1\serverfiles\extractdir
+
+                    // Make the directory for extractedfiles
+                    Directory.CreateDirectory(extractedDirPath);
+
+                    // Combined path for zip file destination based on build name
+                    string zipPath = Path.Combine(extractedDirPath, $"terraria-server-{buildNumber}.zip"); // c:\windowsgsm\servers\1\serverfiles\extractdir\terraria-server-1412.zip
+
+                    // Build URL String
+                    string URLFull = $"https://terraria.org{endURLString}";
+
+                    // Download .zip file to extracted dir
+                    await webClient.DownloadFileTaskAsync($"{URLFull}", zipPath);
+
+                    // Extract files to c:\windowsgsm\servers\1\serverfiles\extractDIR\1412\
                     await Task.Run(async () =>
                     {
                         try
                         {
-                            await FileManagement.ExtractZip(zipPath, serverPath);
+                            await FileManagement.ExtractZip(zipPath, extractedDirPath);
                         }
                         catch
                         {
                             Error = "Path too long";
                         }
                     });
+
+                    // Delete zip file downloaded from website
                     await Task.Run(() => File.Delete(zipPath));
 
-                    //Create FiveM-version.txt and write the downloaded version with hash
-                    File.WriteAllText(Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "RedM-version.txt"), remoteBuild);
-                }
+                    // Setup path with known buildnumber variable
+                    string extractedFilesPath = Path.Combine(extractedDirPath,$"{buildNumber}","Windows"); // C:\windowsgsm\servers\1\serverfiles\extractDir\1412\Windows
+
+                    // Copy files (this is for a new install) from the extracted directory to the main file directory within windowsGSM (c:\windowsgsm\servers\1\serverfiles)
+                    foreach (var file in Directory.GetFiles(extractedFilesPath))
+                        if (!(file.Contains("serverconfig.txt"))) // this is literally the only difference between the install process/task and the update one. Don't overwrite the config file!
+                        {
+                            File.Copy(file, Path.Combine(Functions.ServerPath.GetServersServerFiles(_serverData.ServerID), Path.GetFileName(file)), true);
+                        }
+
+                    // Delete the directory for extractedfiles
+                    Directory.Delete(extractedDirPath,true);
 
                 return null;
             }
-            catch
+            catch (Exception e)
             {
+                Error = e.Message;
                 return null;
             }
         }
 
+
+        // Verify that files needed to run server are present after gold/fresh install
         public bool IsInstallValid()
         {
-            string exeFile = @"server\FXServer.exe";
-            string exePath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, exeFile);
-
+            string exePath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, StartPath); // c:\windowsgsm\servers\1\serverfiles\terrariaserver.exe
             return File.Exists(exePath);
         }
 
+
+        // Verify that files needed to run server are present after import
         public bool IsImportValid(string path)
         {
-            string exeFile = @"server\FXServer.exe";
-            string exePath = Path.Combine(path, exeFile);
-
-            Error = $"Invalid Path! Fail to find {exeFile}";
+            string exePath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, StartPath); // c:\windowsgsm\servers\1\serverfiles\terrariaserver.exe
             return File.Exists(exePath);
         }
 
+
+        // Read files to ascertain what version is currently installed
         public string GetLocalBuild()
         {
-            string versionPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "RedM-version.txt");
-           // Error = $"Fail to get local build";
-            return File.Exists(versionPath) ? File.ReadAllText(versionPath) : string.Empty;
+            var terrariaVersion = FileVersionInfo.GetVersionInfo(Path.Combine(Functions.ServerPath.GetServersServerFiles(_serverData.ServerID), StartPath));
+            return terrariaVersion.FileVersion.ToString();
         }
 
+
+        // Read online sources to determine newest publically available version
         public async Task<string> GetRemoteBuild()
         {
             try
             {
                 using (WebClient webClient = new WebClient())
                 {
-                    string html = await webClient.DownloadStringTaskAsync("https://runtime.fivem.net/artifacts/fivem/build_server_windows/master/");
-                    Regex regex = new Regex(@"[0-9]{4}-[ -~][^\s]{39}");
-                    var matches = regex.Matches(html);
+                    string htmlstring = await webClient.DownloadStringTaskAsync("https://terraria.gamepedia.com/Server");
+                    Regex regexVersionNumbers = new Regex(@"Terraria Server (\d+[\.\d+]+)");
+                    MatchCollection matches1 = regexVersionNumbers.Matches(htmlstring);
+                    string newestVersionString = matches1[matches1.Count -1].Groups[1].Value; // This is verrrryyy house of cards/weak. Could easily break, but there wasn't much other option
 
-                    return matches[0].Value;
+                    return newestVersionString;
                 }
             }
             catch
             {
-                //ignore
+                Error = $"Fail to get remote build";
+                return string.Empty;
             }
 
-            Error = $"Fail to get remote build";
-            return string.Empty;
         }
     }
 }
