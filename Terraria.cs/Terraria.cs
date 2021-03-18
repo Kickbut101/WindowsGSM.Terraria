@@ -72,9 +72,9 @@ namespace WindowsGSM.Plugins
 
             // Prepare start parameters
             var param = new StringBuilder();
-            param.Append($" -config serverconfig.txt");
+            param.Append($" -config serverconfig.txt"); // The config file seems to override any/all commands dictated below. Make sure this file is either commented off if you don't want to use it, or filled out accurately
             param.Append($" -savedirectory \"{shipWorkingPath}\""); // This is the golden got-damn command needed to point all world related stuff to a directory. Thanks terraria "wiki" for not listing this. Buttholes.
-            param.Append(string.IsNullOrWhiteSpace(_serverData.ServerPort) ? string.Empty : $" -port {_serverData.ServerPort}");
+            param.Append(string.IsNullOrWhiteSpace(_serverData.ServerPort) ? string.Empty : $" -port {_serverData.ServerPort}"); // Currently this logic is circular. Ideally we'd be reading the serverconfig.txt file and verifying if the commands are already listed in there.
             param.Append(string.IsNullOrWhiteSpace(_serverData.ServerMaxPlayer) ? string.Empty : $" -players {_serverData.ServerMaxPlayer}");
             param.Append(string.IsNullOrWhiteSpace(_serverData.ServerIP) ? string.Empty : $" -ip \"{_serverData.ServerIP}\""); 
             param.Append(string.IsNullOrWhiteSpace(_serverData.ServerMap) ? string.Empty : $" -world \"{terrariaServerMapPath}\""); 
