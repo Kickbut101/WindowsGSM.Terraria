@@ -156,26 +156,31 @@ namespace WindowsGSM.Plugins
                 }
             });
         }
+        public string get_file_name() {
+            WebClient webClient = new WebClient();
 
+            // Base url for terraria info/webpage
+            string html = webClient.DownloadString("https://terraria.org/api/get/dedicated-servers-names");
+
+            // Regex pattern for pulling the download file location/address
+            Regex regexFullString = new Regex(@"\[(.*?)\]");
+            Match matches1 = regexFullString.Match(html);
+            // Save group 1 as endURLString
+            string endURLString = matches1.Groups[1].Value; // "terraria-server-1436.zip","Terraria-Mobile-Server-1.4.3.2.zip"
+
+            endURLString = endURLString.Split(',')[0]; //"terraria-server-1436.zip"
+
+            endURLString = endURLString.Substring(1, endURLString.Length - 2); //terraria-server-1436.zip
+
+            return endURLString;
+        }
         public async Task<Process> Install()
         {
             try
             {
-                    // Set webclient object
-                    WebClient webClient = new WebClient();
-
-                    // Base url for terraria info/webpage
-                    string html = await webClient.DownloadStringTaskAsync("https://terraria.org/");
-
-                    // Regex pattern for pulling the download file location/address
-                    Regex regexFullString = new Regex(@"href='(.+?)'>PC Dedicated"); // href='/system/dedicated_servers/archives/000/000/042/original/terraria-server-1412.zip?1605039370'>PC Dedicated Server</a>
-                    Match matches1 = regexFullString.Match(html);
-
-                    // Save group 1 as endURLString
-                    string endURLString = matches1.Groups[1].Value; // /system/dedicated_servers/archives/000/000/042/original/terraria-server-1412.zip?1605039370
-
-                    // Pull Build(?) number from string that was regexed
-                    Regex regexBuildNumber = new Regex(@"server-(\d+).zip"); // server-1412.zip || Capture 1412
+                string endURLString = get_file_name();
+                // Pull Build(?) number from string that was regexed
+                Regex regexBuildNumber = new Regex(@"server-(\d+).zip"); // server-1412.zip || Capture 1412
                     Match matches2 = regexBuildNumber.Match(endURLString);
 
                     // Save build number
@@ -190,11 +195,13 @@ namespace WindowsGSM.Plugins
                     // Combined path for zip file destination based on build name
                     string zipPath = Path.Combine(extractedDirPath, $"terraria-server-{buildNumber}.zip"); // c:\windowsgsm\servers\1\serverfiles\extractdir\terraria-server-1412.zip
 
-                    // Build URL String
-                    string URLFull = $"https://terraria.org{endURLString}";
-
-                    // Download .zip file to extracted dir
-                    await webClient.DownloadFileTaskAsync($"{URLFull}", zipPath);
+                // Build URL String
+                //throw new ArgumentException($"{zipPath}");
+                string URLFull = $"https://terraria.org/api/download/pc-dedicated-server/{endURLString}";
+                // Download .zip file to extracted dir
+                WebClient webClient = new WebClient();
+                
+                await webClient.DownloadFileTaskAsync($"{URLFull}", zipPath);
 
                     // Extract files to c:\windowsgsm\servers\1\serverfiles\extractDIR\1412\
                     await Task.Run(async () =>
@@ -210,7 +217,7 @@ namespace WindowsGSM.Plugins
                     });
 
                     // Delete zip file downloaded from website
-                    await Task.Run(() => File.Delete(zipPath));
+                    //await Task.Run(() => File.Delete(zipPath));
 
                     // Setup path with known buildnumber variable
                     string extractedFilesPath = Path.Combine(extractedDirPath,$"{buildNumber}","Windows"); // C:\windowsgsm\servers\1\serverfiles\extractDir\1412\Windows
@@ -221,7 +228,7 @@ namespace WindowsGSM.Plugins
 
 
                     // Delete the directory for extractedfiles
-                    Directory.Delete(extractedDirPath,true);
+                    //Directory.Delete(extractedDirPath,true);
 
                 return null;
             }
@@ -238,43 +245,29 @@ namespace WindowsGSM.Plugins
         {
              try
             {
-                    // Set webclient object
-                    WebClient webClient = new WebClient();
+                string endURLString = get_file_name();
+                // Pull Build(?) number from string that was regexed
+                Regex regexBuildNumber = new Regex(@"server-(\d+).zip"); // server-1412.zip || Capture 1412
+                Match matches2 = regexBuildNumber.Match(endURLString);
 
-                    // Base url for terraria info/webpage
-                    string html = await webClient.DownloadStringTaskAsync("https://terraria.org/");
+                // Save build number
+                string buildNumber = matches2.Groups[1].Value; // 1412
 
-                    // Regex pattern for pulling the download file location/address
-                    Regex regexFullString = new Regex(@"href='(.+?)'>PC Dedicated"); // href='/system/dedicated_servers/archives/000/000/042/original/terraria-server-1412.zip?1605039370'>PC Dedicated Server</a>
-                    Match matches1 = regexFullString.Match(html);
+                //Set string of directory for extracted files
+                string extractedDirPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "extractDir"); // c:\windowsgsm\servers\1\serverfiles\extractdir
 
-                    // Save group 1 as endURLString
-                    string endURLString = matches1.Groups[1].Value; // /system/dedicated_servers/archives/000/000/042/original/terraria-server-1412.zip?1605039370
+                // Delete all files inside the extractdir (This command kills anything inside and remakes the dir)
+                Directory.CreateDirectory(extractedDirPath);
 
-                    // Pull Build(?) number from string that was regexed
-                    Regex regexBuildNumber = new Regex(@"server-(\d+).zip"); // server-1412.zip || Capture 1412
-                    Match matches2 = regexBuildNumber.Match(endURLString);
+                // Combined path for zip file destination based on build name
+                string zipPath = Path.Combine(extractedDirPath, $"terraria-server-{buildNumber}.zip"); // c:\windowsgsm\servers\1\serverfiles\extractdir\terraria-server-1412.zip
 
-                    // Save build number
-                    string buildNumber = matches2.Groups[1].Value; // 1412
-
-                    //Set string of directory for extracted files
-                    string extractedDirPath = Functions.ServerPath.GetServersServerFiles(_serverData.ServerID, "extractDir"); // c:\windowsgsm\servers\1\serverfiles\extractdir
-
-                    // Make the directory for extractedfiles
-                    Directory.CreateDirectory(extractedDirPath);
-
-                    // Combined path for zip file destination based on build name
-                    string zipPath = Path.Combine(extractedDirPath, $"terraria-server-{buildNumber}.zip"); // c:\windowsgsm\servers\1\serverfiles\extractdir\terraria-server-1412.zip
-
-                    // Build URL String
-                    string URLFull = $"https://terraria.org{endURLString}";
-
-                    // Download .zip file to extracted dir
-                    await webClient.DownloadFileTaskAsync($"{URLFull}", zipPath);
-
-                    // Extract files to c:\windowsgsm\servers\1\serverfiles\extractDIR\1412\
-                    await Task.Run(async () =>
+                // Build URL String
+                string URLFull = $"https://terraria.org/api/download/pc-dedicated-server/{endURLString}";
+                WebClient webClient = new WebClient();
+                await webClient.DownloadFileTaskAsync($"{URLFull}", zipPath);
+                // Extract files to c:\windowsgsm\servers\1\serverfiles\extractDIR\1412\
+                await Task.Run(async () =>
                     {
                         try
                         {
