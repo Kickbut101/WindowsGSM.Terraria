@@ -21,7 +21,7 @@ namespace WindowsGSM.Plugins
             author = "Andy, Updated By: Ada",
             description = "WindowsGSM plugin for supporting Terraria",
             version = "1.1",
-            url = "https://github.com/Kickbut101/WindowsGSM.Terraria", // Github repository link (Best practice)
+            url = "https://github.com/Ada64bit/WindowsGSM.Terraria", // Github repository link (Best practice)
             color = "#800080" // Color Hex
         };
 
